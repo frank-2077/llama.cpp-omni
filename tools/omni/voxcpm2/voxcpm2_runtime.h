@@ -30,6 +30,10 @@ struct VoxCPM2GenerateParams {
     float    temperature           = 1.0f;
     int      target_sr             = 48000;
     int      reference_sample_rate = 0;  // 0 means AudioVAE input sample rate
+    // Only read by generate_ultimate_clone, which encodes two independent WAVs.
+    // <= 0 falls back to reference_sample_rate, so callers whose reference and
+    // prompt share a rate can keep setting just reference_sample_rate.
+    int      prompt_sample_rate    = 0;
     uint32_t seed                  = 0;
     bool     stop_on_predictor     = true;
     bool     append_audio_start    = true;
@@ -160,6 +164,15 @@ struct VoxCPM2Runtime {
     bool                 generate_streaming(const std::string &               text,
                                             const VoxCPM2AudioChunkCallback & callback,
                                             const VoxCPM2GenerateParams &     params = {});
+    // Reference + prompt cloning: reference_wav sets the timbre (isolated by the
+    // 103/104 markers), prompt_wav is the continuation context whose transcript is
+    // prompt_text. Keep this parameter order in sync with the definition — both wavs
+    // are const std::vector<float> &, so a swap compiles and links silently.
+    std::vector<float> generate_ultimate_clone(const std::string &        target_text,
+                                               const std::string &        prompt_text,
+                                               const std::vector<float> & reference_wav,
+                                               const std::vector<float> & prompt_wav,
+                                               const VoxCPM2GenerateParams & params = {});
     // Same prefill as generate_with_clone / continuation, then patch-wise streaming decode
     // (early TTFA — mirrors Python generate_streaming with reference/prompt audio).
     bool                 generate_with_clone_streaming(const std::string &               text,
@@ -250,6 +263,11 @@ struct VoxCPM2Runtime {
                                                            const std::vector<float> &   prompt_feat,
                                                            bool                         append_audio_start,
                                                            VoxCPM2PrefillInputs &       inputs);
+    bool                 build_ultimate_clone_prefill(const std::vector<int32_t> & text_token_ids,
+                                                      const std::vector<float> &   reference_feat,
+                                                      const std::vector<float> &   prompt_feat,
+                                                      bool                         append_audio_start,
+                                                      VoxCPM2PrefillInputs &       inputs);
     bool                 decode_streaming_from_ready_state(const VoxCPM2GenerateParams &     params,
                                                            const VoxCPM2AudioChunkCallback & callback);
     // Decode output_pool[start_patch, end_patch). end_patch < 0 → size.

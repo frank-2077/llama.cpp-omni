@@ -174,8 +174,7 @@ Provide a reference audio file (WAV, mono, any sample rate):
 
 Combine reference audio (isolated by the 103/104 markers) with a transcribed
 prompt audio used as continuation context. Reference and prompt may be different
-files and need not share a sample rate; each is encoded at its own rate.
-Streaming is not supported in this mode:
+files and need not share a sample rate; each is encoded at its own rate:
 
 ```bash
 ./build/bin/voxcpm2-cli \

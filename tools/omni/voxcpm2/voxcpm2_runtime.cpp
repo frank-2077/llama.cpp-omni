@@ -2089,13 +2089,14 @@ bool VoxCPM2Runtime::build_ultimate_clone_prefill(const std::vector<int32_t> & t
     return true;
 }
 
-// Parameter order must stay in sync with the declaration in voxcpm2_runtime.h:
-// reference_wav and prompt_wav have the same type, so a swap compiles silently.
-std::vector<float> VoxCPM2Runtime::generate_ultimate_clone(const std::string &           target_text,
-                                                           const std::string &           prompt_text,
-                                                           const std::vector<float> &    reference_wav,
-                                                           const std::vector<float> &    prompt_wav,
-                                                           const VoxCPM2GenerateParams & params) {
+// The three functions below all take reference_wav then prompt_wav. Both are
+// const std::vector<float> &, so swapping them compiles and links silently —
+// keep the order in sync with the declarations in voxcpm2_runtime.h.
+bool VoxCPM2Runtime::prepare_ultimate_clone_state(const std::string &           target_text,
+                                                  const std::string &           prompt_text,
+                                                  const std::vector<float> &    reference_wav,
+                                                  const std::vector<float> &    prompt_wav,
+                                                  const VoxCPM2GenerateParams & params) {
     clear_error();
     const std::string    joined_text = prompt_text + target_text;
     std::vector<int32_t> token_ids   = tokenize_text(joined_text, false, true);
@@ -2103,12 +2104,12 @@ std::vector<float> VoxCPM2Runtime::generate_ultimate_clone(const std::string &  
         if (last_error_msg.empty()) {
             fail("text tokenization produced no tokens");
         }
-        return {};
+        return false;
     }
 
     std::vector<float> reference_feat = encode_reference_audio(reference_wav, params.reference_sample_rate);
     if (reference_feat.empty()) {
-        return {};
+        return false;
     }
     // The two WAVs are independent files and need not share a sample rate;
     // resampling the prompt at the reference's rate would shift its pitch and
@@ -2117,18 +2118,26 @@ std::vector<float> VoxCPM2Runtime::generate_ultimate_clone(const std::string &  
         params.prompt_sample_rate > 0 ? params.prompt_sample_rate : params.reference_sample_rate;
     std::vector<float> prompt_feat = encode_reference_audio(prompt_wav, prompt_sr);
     if (prompt_feat.empty()) {
-        return {};
+        return false;
     }
 
     VoxCPM2PrefillInputs inputs;
     if (!build_ultimate_clone_prefill(token_ids, reference_feat, prompt_feat, params.append_audio_start, inputs)) {
-        return {};
+        return false;
     }
 
     if (params.seed != 0) {
         rng.seed(params.seed);
     }
-    if (!prefill(inputs)) {
+    return prefill(inputs);
+}
+
+std::vector<float> VoxCPM2Runtime::generate_ultimate_clone(const std::string &           target_text,
+                                                           const std::string &           prompt_text,
+                                                           const std::vector<float> &    reference_wav,
+                                                           const std::vector<float> &    prompt_wav,
+                                                           const VoxCPM2GenerateParams & params) {
+    if (!prepare_ultimate_clone_state(target_text, prompt_text, reference_wav, prompt_wav, params)) {
         return {};
     }
     decode_loop(params, nullptr);
@@ -2137,6 +2146,18 @@ std::vector<float> VoxCPM2Runtime::generate_ultimate_clone(const std::string &  
     }
 
     return decode_to_waveform(params.target_sr);
+}
+
+bool VoxCPM2Runtime::generate_ultimate_clone_streaming(const std::string &               target_text,
+                                                       const std::string &               prompt_text,
+                                                       const std::vector<float> &        reference_wav,
+                                                       const std::vector<float> &        prompt_wav,
+                                                       const VoxCPM2AudioChunkCallback & callback,
+                                                       const VoxCPM2GenerateParams &     params) {
+    if (!prepare_ultimate_clone_state(target_text, prompt_text, reference_wav, prompt_wav, params)) {
+        return false;
+    }
+    return decode_streaming_from_ready_state(params, callback);
 }
 
 void VoxCPM2Runtime::free() {

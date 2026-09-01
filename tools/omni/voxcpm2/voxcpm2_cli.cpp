@@ -68,7 +68,7 @@ static void print_usage(const char * prog) {
         "  -r, --reference PATH Reference WAV for voice cloning\n"
         "  --prompt-wav PATH    Prompt WAV for continuation/ultimate cloning\n"
         "  --prompt-text TEXT   Transcript of prompt WAV (required with --prompt-wav)\n"
-        "  --stream             Streaming mode (not supported for ultimate cloning)\n"
+        "  --stream             Streaming mode\n"
         "  --steps N            Max decode steps (default: 200)\n"
         "  --timesteps N        CFM inference timesteps (default: 10)\n"
         "  --cfg F              CFG guidance scale (default: 2.0)\n"
@@ -284,13 +284,27 @@ static int run_synthesis(const CliConfig & cfg) {
         params.reference_sample_rate = ref_sr;
         params.prompt_sample_rate    = prompt_sr;
         if (cfg.streaming) {
-            LOG_WRN("--stream is not supported for ultimate clone yet; generating without streaming\n");
-        }
-        LOG_INF("Generating (ultimate clone)...\n");
-        wav = runtime.generate_ultimate_clone(cfg.text, cfg.prompt_text, ref_wav, prompt_wav, params);
-        if (wav.empty()) {
-            LOG_ERR("Ultimate cloning failed: %s\n", runtime.last_error().c_str());
-            return 1;
+            LOG_INF("Generating (ultimate clone streaming)...\n");
+            std::vector<float> all_wav;
+            if (!runtime.generate_ultimate_clone_streaming(
+                    cfg.text, cfg.prompt_text, ref_wav, prompt_wav,
+                    [&all_wav](const std::vector<float> & chunk, bool is_final) {
+                        all_wav.insert(all_wav.end(), chunk.begin(), chunk.end());
+                        LOG_INF("  Chunk: %zu samples%s\n", chunk.size(), is_final ? " (final)" : "");
+                        return true;
+                    },
+                    params)) {
+                LOG_ERR("Ultimate clone streaming failed: %s\n", runtime.last_error().c_str());
+                return 1;
+            }
+            wav = std::move(all_wav);
+        } else {
+            LOG_INF("Generating (ultimate clone)...\n");
+            wav = runtime.generate_ultimate_clone(cfg.text, cfg.prompt_text, ref_wav, prompt_wav, params);
+            if (wav.empty()) {
+                LOG_ERR("Ultimate cloning failed: %s\n", runtime.last_error().c_str());
+                return 1;
+            }
         }
     } else if (!cfg.prompt_wav_path.empty() && !cfg.prompt_text.empty()) {
         // Continuation-mode voice cloning (prompt transcript + prompt audio).

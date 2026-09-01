@@ -184,6 +184,15 @@ struct VoxCPM2Runtime {
                                                               const std::vector<float> &        prompt_wav,
                                                               const VoxCPM2AudioChunkCallback & callback,
                                                               const VoxCPM2GenerateParams &     params = {});
+    // Streaming counterpart of generate_ultimate_clone: identical prefill, then
+    // patch-wise decode for early TTFA. Same parameter-order caveat applies —
+    // reference_wav and prompt_wav are both const std::vector<float> &.
+    bool                 generate_ultimate_clone_streaming(const std::string &               target_text,
+                                                           const std::string &               prompt_text,
+                                                           const std::vector<float> &        reference_wav,
+                                                           const std::vector<float> &        prompt_wav,
+                                                           const VoxCPM2AudioChunkCallback & callback,
+                                                           const VoxCPM2GenerateParams &     params = {});
 
     void reset_state();
     void free();
@@ -268,6 +277,16 @@ struct VoxCPM2Runtime {
                                                       const std::vector<float> &   prompt_feat,
                                                       bool                         append_audio_start,
                                                       VoxCPM2PrefillInputs &       inputs);
+    // Shared front half of generate_ultimate_clone and its streaming counterpart:
+    // tokenize the joined text, encode both wavs at their own sample rates, build
+    // the prefill and run it. Leaves the runtime in the ready state so the caller
+    // only chooses how to drive the decode. Kept in one place so the blocking and
+    // streaming paths cannot drift apart on the sample-rate fallback.
+    bool                 prepare_ultimate_clone_state(const std::string &           target_text,
+                                                      const std::string &           prompt_text,
+                                                      const std::vector<float> &    reference_wav,
+                                                      const std::vector<float> &    prompt_wav,
+                                                      const VoxCPM2GenerateParams & params);
     bool                 decode_streaming_from_ready_state(const VoxCPM2GenerateParams &     params,
                                                            const VoxCPM2AudioChunkCallback & callback);
     // Decode output_pool[start_patch, end_patch). end_patch < 0 → size.
